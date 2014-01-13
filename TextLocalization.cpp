@@ -1,18 +1,21 @@
-// text.cpp : ¶¨Òå¿ØÖÆÌ¨Ó¦ÓÃ³ÌÐòµÄÈë¿Úµã¡£
-//
-
-#include <iostream>
+ï»¿#include <iostream>
 #include <stack>
 #include <queue>
 #include "opencv2/opencv.hpp"
 #include "ccer.hpp"
-
+#include <fstream>
 #include "LogisticRegression.hpp"
-//#include <assert.h>
+#include <boost/lexical_cast.hpp>
+#include "boost/filesystem/operations.hpp" // includes boost/filesystem/path.hpp
+#include "boost/filesystem/fstream.hpp"    // ditto
 #include "ccMSER.h"
+#include <time.h>
+#include "ReadConfig.h"
 using namespace std;
 using namespace cv;
 using namespace LogisticRegression;
+using namespace boost;
+namespace bfs = boost::filesystem;
 int cnt=0,err=0;
 Mat draw;
 
@@ -254,12 +257,13 @@ struct Cmp{
 	}
 };
 
-vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vector<double> &featureweights,double threshold){
+vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vector<double> &featureweights,double threshold) {
 	int N=data.size();
 	vector<vector<distances> >dist;// 2d vector for storing distances matrix
 	vector<multiset<distances, Cmp>> P(N);// multiset for storing sorted distances
 	vector<int> active(N,1);// vector for storing flags for marking currently active clusters
 	vector<vector<int>> A;// 2d vector for storing lists of titles in clusters
+	vector<vector<int>> res;
 	for(size_t i=0;i<N;++i){
 		vector<int> A_i;
 		A_i.push_back(i);
@@ -287,7 +291,7 @@ vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vec
 				}
 			}
 		}
-		cout<<"min dist"<<min_dist<<endl;
+		//cout<<"min dist:\t"<<min_dist<<endl;
 		if(min_dist>threshold){
 			break;
 		}
@@ -323,24 +327,28 @@ vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vec
 	int class_num = 0;
 	for(int i=0; i<N; ++i)
 	{
-		if(active[i]==1&&A[i].size()>1)
+		if(active[i]==1&&A[i].size()>1)//
 		{
 			Rect tmp=data[A[i][0]]->rect;
 			++class_num;
-			cout<<std::endl<<"Class number: "<<class_num<<std::endl<<std::endl;
+			vector<int> tmpre;
+			cout<<endl<<"Class number: "<<class_num<<endl<<endl;
 			for(int j=0;j<A[i].size();j++){
+				tmpre.push_back(A[i][j]);
 				tmp=tmp|data[A[i][j]]->rect;
 				char b[100];
 				sprintf(b,"%d---%f",class_num,data[A[i][j]]->var);
 				string a(b);
 				//imwrite("e://mserout//"+a+".jpg",draw(data[A[i][j]]->rect));
-				cout<<A[i][j]<<std::endl;
+				//cout<<A[i][j]<<std::endl;
 			}
 			rectangle(draw,tmp,Scalar(0,0,255),2);
+			res.push_back(tmpre);
 		}
 	}
-	return A;
+	return res;
 }
+
 
 int main2(){
 	string path="C:\\Users\\Administrator\\Desktop\\mser\\102.jpg";
@@ -545,11 +553,19 @@ int main2(int argc, char** argv){
 	return 0;
 }
 
-int main(){
-	string p="C:\\Users\\Administrator\\Desktop\\mser\\385.jpg";
+int main3(){
+	string p;
+	//p="C:\\Users\\Administrator\\Desktop\\mser\\385.jpg";
+	string configFile="config.txt";
+	map<string, string> config;
+	ReadConfig(configFile, config);
+	PrintConfig(config);
+	p=config["img"];
+	double thres=atof(config["thres"].c_str());
 	Mat image = imread(p, 0);
 	draw = imread(p, 1);
-	ccMSER t(5, 60, 1440,0.25, .2,200, 1.01,0.003, 5);
+	clock_t start=clock();
+	ccMSER t(5, 60, 1440,0.25, 0.2,200, 1.01,0.003, 5);
 	//vector<vector<Point> > contours;
 	//vector<Vec4i> hierarchy;
 	//CvSeq *contours;
@@ -576,7 +592,7 @@ int main(){
 	}
 	cout<<"after LinearReduction and TreeAccumulation:"<<res.size()<<endl;
 	vector<double> featureWeights(7,1);
-	vector<vector<int>> clusterResult=HierarchicalClustering(image,res,featureWeights,2.5);
+	vector<vector<int>> clusterResult=HierarchicalClustering(image,res,featureWeights,thres);
 	//for(int i=0;i<clusterResult.size();i++){
 	//	cout<<i<<":\t";
 	//	for(int j=0;j<clusterResult[i].size();j++){
@@ -593,6 +609,74 @@ int main(){
 	//CvSeq* tt=contours[0];
 	//CvContour* tmp=(CvContour*)*it;
 	//imshow("Color mser", draw);
+	cout<<"time costs: "<<double(clock()-start)/CLOCKS_PER_SEC<<"s\n";
 	imshow("result.jpg", draw);
 	waitKey(0);
+	return 0;
+}
+vector<Rect> readGroundTruth(string fileName){
+	vector<Rect> res;
+	ifstream r(fileName);
+	string tmp;
+	int a[4];
+	while(!r.eof()){
+		getline(r,tmp);
+		if(tmp.length()<1)break;
+		int start=0,end;
+		for(int i=0;i<4;i++){
+			end=tmp.find(',',start);
+			a[i]=atoi(tmp.substr(start,end-start).c_str());
+			start=end+1;
+			//cout<<a[i]<<"\t";
+		}
+		//cout<<endl;
+		Rect tmpRect(Point(a[0],a[1]),Point(a[2],a[3]));
+		res.push_back(tmpRect);
+		rectangle(draw,tmpRect,Scalar(0,0,255),2);
+	}
+	return res;
+}
+int main(){
+	string configFile="config.txt";
+	map<string, string> config;
+	ReadConfig(configFile, config);
+	double thres=atof(config["thres"].c_str());
+	bfs::path p( "e:\\groundtruth" );
+	copy(bfs::directory_iterator(p), bfs::directory_iterator(), // directory_iterator::value_type
+		ostream_iterator<bfs::directory_entry>(cout, "\n")); // is directory_entry, which is
+	// converted to a path by the
+	// path stream inserter
+	for(int i=101;i<=1;++i){
+		string p,gt;
+		string a=lexical_cast <string>(i);
+		p="E:\\test-textloc-gt\\"+a+".jpg";
+		gt="E:\\test-textloc-gt\\gt_"+a+".txt";
+		//draw = imread(p, 1);
+		vector<Rect> groundTruthRect=readGroundTruth(gt);
+		Mat img=imread(p);
+		for(int j=0;j<groundTruthRect.size();++j){
+			imwrite("e:\\groundtruth\\"+a+"-"+lexical_cast <string>(j+1)+".jpg",img(groundTruthRect[j]));
+		}
+		//Mat image = imread(p, 0);
+		//ccMSER t(5, 60, 1440,0.25, 0.2,200, 1.01,0.003, 5);
+		//vector<ccRegion> regions;
+		//t(image,regions);
+		//vector<ccRegion *> res;
+		//for(int i=0;i<regions.size();i++){
+		//	if(regions[i].parent==NULL){
+		//		Union(res,TreeAccumulation(LinearReduction(&regions[i])));
+		//	}
+		//}
+		//cout<<"after LinearReduction and TreeAccumulation:"<<res.size()<<endl;
+		//vector<double> featureWeights(7,1);
+		//vector<vector<int>> clusterResult=HierarchicalClustering(image,res,featureWeights,thres);
+		//for(int j=0;j<clusterResult.size();++j){
+		//	Rect tmp=res[clusterResult[j][0]]->rect;
+		//	for(int k=1;k<clusterResult[j].size();++k){
+		//		tmp=tmp|res[clusterResult[j][k]]->rect;
+		//	}
+		//}
+	}
+	//imshow("result.jpg", draw);
+	//waitKey(0);
 }
