@@ -1,0 +1,12 @@
+img=C:\\Users\\Administrator\\Desktop\\mser\\108.jpg
+#img=E:\\test-textloc-gt\\415.jpg
+thres=2.5
+delta=5
+min_area=60
+max_area=14400
+max_variation=0.25
+min_diversity=0.2
+max_evolution=200
+area_threshold=1.01
+min_margin=0.003
+edge_blur_size=5
