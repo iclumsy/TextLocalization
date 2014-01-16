@@ -180,7 +180,7 @@ int ComputeStrokeWidth(Mat &img,Rect rect,int level){
 	diagonallength=sqrt(rect.width*rect.width+rect.height*rect.height);
 	xincrease=rect.width/diagonallength;
 	yincrease=rect.height/diagonallength;
-	int strokewidth=INT_MAX,currentwidth;
+	int strokewidth=INT_MAX;
 	ComputeStrokeWidthHelper(img,level,rect.x,rect.y,diagonallength,xincrease,yincrease,strokewidth);
 	ComputeStrokeWidthHelper(img,level,rect.x,rect.y+rect.height,diagonallength,xincrease,-yincrease,strokewidth);
 	ComputeStrokeWidthHelper(img,level,rect.x+0.5*rect.width,rect.y,diagonallength,0,yincrease,strokewidth);
@@ -293,12 +293,17 @@ vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vec
 		}
 		//cout<<"min dist:\t"<<min_dist<<endl;
 		if(min_dist>threshold){
-			break;
+			//break;
 		}
 		// we have minimum distance
 		// k1, k2 - indexes of most nearest clusters
 		int k1 = min_index;
 		int k2 = P[k1].begin()->index;
+
+		Rect tmp=data[k1]->rect|data[k2]->rect;
+		if((data[k1]->rect.area()+data[k2]->rect.area())*1.0/tmp.area()<threshold){
+			break;
+		}
 
 		int N_k1 = A[k1].size();
 		int N_k2 = A[k2].size();
@@ -332,13 +337,13 @@ vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vec
 			Rect tmp=data[A[i][0]]->rect;
 			++class_num;
 			vector<int> tmpre;
-			cout<<endl<<"Class number: "<<class_num<<endl<<endl;
+			//cout<<endl<<"Class number: "<<class_num<<endl<<endl;
 			for(int j=0;j<A[i].size();j++){
 				tmpre.push_back(A[i][j]);
 				tmp=tmp|data[A[i][j]]->rect;
-				char b[100];
-				sprintf(b,"%d---%f",class_num,data[A[i][j]]->var);
-				string a(b);
+				//char b[100];
+				//sprintf(b,"%d---%f",class_num,data[A[i][j]]->var);
+				//string a(b);
 				//imwrite("e://mserout//"+a+".jpg",draw(data[A[i][j]]->rect));
 				//cout<<A[i][j]<<std::endl;
 			}
@@ -348,7 +353,57 @@ vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vec
 	}
 	return res;
 }
+void ComputeStrokeWidthHelper(Mat &img,double startX,double startY,double diagonalLength,double xIncrease,double yIncrease,vector<int> &strokeWidthVector,int thres=10){
+	int currentWidth=0;
+	double x=startX,y=startY;
+	uchar pre=255;
+	
+	for(int i=0;i<diagonalLength;++i){
+		int tx=floor(x+0.5),ty=floor(y+0.5);
+		if(tx>=img.cols||ty>=img.rows){
+			break;
+		}
+		//cout<<"tx:"<<tx<<"\tty:"<<ty<<endl;
+		int tmpPixel=img.at<uchar>(ty,tx);
+		if(abs(tmpPixel-pre)<thres){
+			currentWidth++;
+		}
+		else{
+			if(currentWidth>1){
+				//strokeWidth=min(currentWidth,strokeWidth);
+				strokeWidthVector.push_back(currentWidth);
+			}
+			currentWidth=0;
+			pre=tmpPixel;
+		}
+		x+=xIncrease;
+		y+=yIncrease;
+	}
+}
+int ComputeStrokeWidth(Mat &img,Rect rect){
+	double xIncrease,yIncrease,diagonalLength;
+	diagonalLength=sqrt(rect.width*rect.width+rect.height*rect.height);
+	xIncrease=rect.width/diagonalLength;
+	yIncrease=rect.height/diagonalLength;
+	int strokeWidth=INT_MAX;
+	vector<int> strokeWidthVector;
+	ComputeStrokeWidthHelper(img,rect.x,rect.y,diagonalLength,xIncrease,yIncrease,strokeWidthVector);
+	ComputeStrokeWidthHelper(img,rect.x,rect.y+rect.height,diagonalLength,xIncrease,-yIncrease,strokeWidthVector);
+	ComputeStrokeWidthHelper(img,rect.x+0.5*rect.width,rect.y,diagonalLength,0,yIncrease,strokeWidthVector);
+	ComputeStrokeWidthHelper(img,rect.x,rect.y+0.5*rect.height,diagonalLength,xIncrease,0,strokeWidthVector);
+	sort(strokeWidthVector.begin(),strokeWidthVector.end());
+	return strokeWidthVector[strokeWidthVector.size()/2];
+}
+vector<double> GenerateFeature(Mat &img,Rect rect){
+	vector<double> res(4,0);
+	
+	res[0]=rect.height;
+	res[1]=rect.width;
+	res[2]=rect.height*1.0/rect.width;
 
+	res[3]=ComputeStrokeWidth(img,rect);
+	return res;
+}
 
 int main2(){
 	string path="C:\\Users\\Administrator\\Desktop\\mser\\102.jpg";
@@ -642,20 +697,33 @@ int main(){
 	ReadConfig(configFile, config);
 	double thres=atof(config["thres"].c_str());
 	bfs::path p( "e:\\groundtruth" );
-	copy(bfs::directory_iterator(p), bfs::directory_iterator(), // directory_iterator::value_type
-		ostream_iterator<bfs::directory_entry>(cout, "\n")); // is directory_entry, which is
+	//copy(bfs::directory_iterator(p), bfs::directory_iterator(), // directory_iterator::value_type
+		//ostream_iterator<bfs::directory_entry>(cout, "\n")); // is directory_entry, which is
 	// converted to a path by the
 	// path stream inserter
-	for(int i=101;i<=1;++i){
+	ofstream f("C:\\Users\\Administrator\\Desktop\\1.txt");
+	for(int i=101;i<=419;++i){
 		string p,gt;
 		string a=lexical_cast <string>(i);
+		cout<<i<<endl;
 		p="E:\\test-textloc-gt\\"+a+".jpg";
 		gt="E:\\test-textloc-gt\\gt_"+a+".txt";
 		//draw = imread(p, 1);
 		vector<Rect> groundTruthRect=readGroundTruth(gt);
 		Mat img=imread(p);
+		Mat grayImg=imread(p,0);
 		for(int j=0;j<groundTruthRect.size();++j){
-			imwrite("e:\\groundtruth\\"+a+"-"+lexical_cast <string>(j+1)+".jpg",img(groundTruthRect[j]));
+			//imwrite("e:\\groundtruth\\"+a+"-"+lexical_cast <string>(j+1)+".jpg",img(groundTruthRect[j]));
+			//f<<grayImg(groundTruthRect[8]);
+			//imshow("c",grayImg(groundTruthRect[8]));
+			//waitKey(0);
+			vector<double> t=GenerateFeature(grayImg,groundTruthRect[j]);
+			for(int k=0;k<t.size();++k){
+				f<<t[k]<<"\t";
+			}
+			f<<""<<endl;
+			//cout<<"strkoe width:\t"<<t[3]<<endl;
+			//break;
 		}
 		//Mat image = imread(p, 0);
 		//ccMSER t(5, 60, 1440,0.25, 0.2,200, 1.01,0.003, 5);
@@ -679,4 +747,5 @@ int main(){
 	}
 	//imshow("result.jpg", draw);
 	//waitKey(0);
+	return 0;
 }
