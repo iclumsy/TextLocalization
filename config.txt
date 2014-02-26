@@ -1,6 +1,6 @@
-img=C:\\Users\\Administrator\\Desktop\\mser\\108.jpg
+img=C:\\Users\\Administrator\\Desktop\\mser\\zbc.jpg
 #img=E:\\test-textloc-gt\\415.jpg
-thres=2.5
+thres=0.1
 delta=5
 min_area=60
 max_area=14400

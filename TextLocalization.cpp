@@ -2,6 +2,7 @@
 #include <stack>
 #include <queue>
 #include "opencv2/opencv.hpp"
+#include "opencv2/objdetect/objdetect.hpp"  
 #include "ccer.hpp"
 #include <fstream>
 #include "LogisticRegression.hpp"
@@ -392,7 +393,7 @@ int ComputeStrokeWidth(Mat &img,Rect rect){
 	ComputeStrokeWidthHelper(img,rect.x+0.5*rect.width,rect.y,diagonalLength,0,yIncrease,strokeWidthVector);
 	ComputeStrokeWidthHelper(img,rect.x,rect.y+0.5*rect.height,diagonalLength,xIncrease,0,strokeWidthVector);
 	sort(strokeWidthVector.begin(),strokeWidthVector.end());
-	return strokeWidthVector[strokeWidthVector.size()/2];
+	return strokeWidthVector.size()>0?strokeWidthVector[strokeWidthVector.size()/2]:0;
 }
 vector<double> GenerateFeature(Mat &img,Rect rect){
 	vector<double> res(4,0);
@@ -402,6 +403,25 @@ vector<double> GenerateFeature(Mat &img,Rect rect){
 	res[2]=rect.height*1.0/rect.width;
 
 	res[3]=ComputeStrokeWidth(img,rect);
+	vector<float> hogFeature;
+	int width=rect.width/3;
+	int height=rect.height/3;
+	HOGDescriptor hog;
+	Mat cur=img(rect);
+	hog.winSize=Size(width*3,height*3);
+	hog.blockSize=Size(width,height);
+	hog.cellSize=Size(width,height);
+	hog.blockStride=Size(width,height);
+	vector<Point> location;
+	// 滑动窗只有一个，指定top-left位置
+	location.push_back(Point(0,0));
+	cout << "block dimensions: " << width << " width x " << height << "height" << endl;	
+	cout<<"Calculating the HOG descriptors..."<<endl;
+	hog.compute(cur,hogFeature,hog.blockSize,Size(0,0),location);
+	cout << "HOG descriptor size is " << hog.getDescriptorSize() << endl;
+	cout << "img dimensions: " << cur.cols << " width x " << cur.rows << "height" << endl;
+	cout << "Found " << hogFeature.size() << " descriptor values" << endl;
+	//for(int i=0;i<hogFeature.size();i++)cout<<hogFeature[i]<<endl;
 	return res;
 }
 
@@ -691,23 +711,62 @@ vector<Rect> readGroundTruth(string fileName){
 	}
 	return res;
 }
-int main(){
+int main0(){
 	string configFile="config.txt";
 	map<string, string> config;
 	ReadConfig(configFile, config);
 	double thres=atof(config["thres"].c_str());
-	bfs::path p( "e:\\groundtruth" );
+	bfs::path p( "e:\\bizhi" );
 	//copy(bfs::directory_iterator(p), bfs::directory_iterator(), // directory_iterator::value_type
 		//ostream_iterator<bfs::directory_entry>(cout, "\n")); // is directory_entry, which is
 	// converted to a path by the
 	// path stream inserter
+
 	ofstream f("C:\\Users\\Administrator\\Desktop\\1.txt");
-	for(int i=101;i<=419;++i){
+	bfs::directory_iterator it(p),endIter;
+	ccMSER t(5, 60, 1440,0.25, 0.2,200, 1.01,0.003, 5);
+	//vector<vector<Point> > contours;
+	//vector<Vec4i> hierarchy;
+	//CvSeq *contours;
+	vector<ccRegion> regions;
+	int ii=1;
+	for(;it!=endIter;it++){
+		string path=it->path().string();
+		//cout<<path<<endl;
+		Mat grayImage=imread(path,0);
+		draw=imread(path);
+		t(grayImage,regions);
+
+		vector<ccRegion *> res;
+		for(int i=0;i<regions.size();i++){
+			if(regions[i].parent==NULL){
+				Union(res,TreeAccumulation(LinearReduction(&regions[i])));
+			}
+		}
+		cout<<"after LinearReduction and TreeAccumulation:"<<res.size()<<endl;
+		int gen=0;
+		for(int i=0;i<res.size();i++){
+			
+			//for(int k=0;k<t.size();++k){
+			//	f<<t[k]<<"\t";
+			//}
+			//f<<""<<endl;
+
+			if(res[i]->area<500||res[i]->area>20000)continue;
+			vector<double> t=GenerateFeature(grayImage,res[i]->rect);
+			break;
+			//imwrite("e:\\negative\\"+lexical_cast <string>(ii)+"-"+lexical_cast <string>(i+1)+".jpg",draw(res[i]->rect));
+			//if(++gen>2)break;
+		}
+		++ii;
+		//break;
+	}
+	for(int i=101;i<=100;++i){
 		string p,gt;
 		string a=lexical_cast <string>(i);
 		cout<<i<<endl;
 		p="E:\\test-textloc-gt\\"+a+".jpg";
-		gt="E:\\test-textloc-gt\\gt_"+a+".txt";
+		gt="E:\\test-textloc-gt\\gt_"+a+".txt"; 
 		//draw = imread(p, 1);
 		vector<Rect> groundTruthRect=readGroundTruth(gt);
 		Mat img=imread(p);
@@ -717,11 +776,15 @@ int main(){
 			//f<<grayImg(groundTruthRect[8]);
 			//imshow("c",grayImg(groundTruthRect[8]));
 			//waitKey(0);
-			vector<double> t=GenerateFeature(grayImg,groundTruthRect[j]);
-			for(int k=0;k<t.size();++k){
-				f<<t[k]<<"\t";
-			}
-			f<<""<<endl;
+
+			//vector<double> t=GenerateFeature(grayImg,groundTruthRect[j]);
+			//for(int k=0;k<t.size();++k){
+			//	f<<t[k]<<"\t";
+			//}
+			//f<<""<<endl;
+			
+			//imwrite("e:\\positive\\"+lexical_cast <string>(i)+"-"+lexical_cast <string>(j+1)+".jpg",img(groundTruthRect[j]));
+
 			//cout<<"strkoe width:\t"<<t[3]<<endl;
 			//break;
 		}
@@ -747,5 +810,73 @@ int main(){
 	}
 	//imshow("result.jpg", draw);
 	//waitKey(0);
+	return 0;
+}
+
+int main()
+{
+	// Data for visual representation
+	int width = 512, height = 512;
+	Mat image = Mat::zeros(height, width, CV_8UC3);
+
+	// Set up training data
+	float labels[4] = {1.0, -1.0, -1.0, -1.0};
+	Mat labelsMat(4, 1, CV_32FC1, labels);
+
+	float trainingData[4][2] = { {501, 10}, {255, 10}, {501, 255}, {10, 501} };
+	Mat trainingDataMat(4, 2, CV_32FC1, trainingData);
+
+	// Set up SVM's parameters
+	CvSVMParams params;
+	params.svm_type    = CvSVM::C_SVC;
+	params.kernel_type = CvSVM::LINEAR;
+	params.term_crit   = cvTermCriteria(CV_TERMCRIT_ITER, 100, 1e-6);
+
+	// Train the SVM
+	CvSVM SVM;
+	SVM.train(trainingDataMat, labelsMat, Mat(), Mat(), params);
+
+	Vec3b green(0,255,0), blue (255,0,0);
+	// Show the decision regions given by the SVM
+	for (int i = 0; i < image.rows; ++i)
+		for (int j = 0; j < image.cols; ++j)
+		{
+			Mat sampleMat = (Mat_<float>(1,2) << i,j);
+			float response = SVM.predict(sampleMat);
+
+			if (response == 1)
+				image.at<Vec3b>(j, i)  = green;
+			else if (response == -1)
+				image.at<Vec3b>(j, i)  = blue;
+		}
+
+		// Show the training data
+		int thickness = -1;
+		int lineType = 8;
+		circle(	image, Point(501,  10), 5, Scalar(  0,   0,   0), thickness, lineType);
+		circle(	image, Point(255,  10), 5, Scalar(255, 255, 255), thickness, lineType);
+		circle(	image, Point(501, 255), 5, Scalar(255, 255, 255), thickness, lineType);
+		circle(	image, Point( 10, 501), 5, Scalar(255, 255, 255), thickness, lineType);
+
+		// Show support vectors
+		thickness = 2;
+		lineType  = 8;
+		int c     = SVM.get_support_vector_count();
+
+		for (int i = 0; i < c; ++i)
+		{
+			const float* v = SVM.get_support_vector(i);
+			circle(	image,  Point( (int) v[0], (int) v[1]),   6,  Scalar(128, 128, 128), thickness, lineType);
+		}
+
+		imwrite("result.png", image);        // save the image
+
+		imshow("SVM Simple Example", image); // show it to the user
+		waitKey(0);
+
+}
+
+int svm(){
+
 	return 0;
 }
