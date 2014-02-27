@@ -424,7 +424,26 @@ vector<double> GenerateFeature(Mat &img,Rect rect){
 	//for(int i=0;i<hogFeature.size();i++)cout<<hogFeature[i]<<endl;
 	return res;
 }
-
+vector<float> GenerateHogFeature(Mat &img){
+	vector<float> hogFeature;
+	int width=img.cols/3;
+	int height=img.rows/3;
+	HOGDescriptor hog;
+	hog.winSize=Size(width*3,height*3);
+	hog.blockSize=Size(width,height);
+	hog.cellSize=Size(width,height);
+	hog.blockStride=Size(width,height);
+	vector<Point> location;
+	// 滑动窗只有一个，指定top-left位置
+	location.push_back(Point(0,0));
+	//cout << "block dimensions: " << width << " width x " << height << "height" << endl;	
+	//cout<<"Calculating the HOG descriptors..."<<endl;
+	hog.compute(img,hogFeature,hog.blockSize,Size(0,0),location);
+	//cout << "HOG descriptor size is " << hog.getDescriptorSize() << endl;
+	//cout << "img dimensions: " << img.cols << " width x " << img.rows << "height" << endl;
+	//cout << "Found " << hogFeature.size() << " descriptor values" << endl;
+	return hogFeature;
+}
 int main2(){
 	string path="C:\\Users\\Administrator\\Desktop\\mser\\102.jpg";
 	Mat src = imread(path,0);
@@ -813,7 +832,7 @@ int main0(){
 	return 0;
 }
 
-int main()
+int svmexample()
 {
 	// Data for visual representation
 	int width = 512, height = 512;
@@ -869,14 +888,109 @@ int main()
 			circle(	image,  Point( (int) v[0], (int) v[1]),   6,  Scalar(128, 128, 128), thickness, lineType);
 		}
 
-		imwrite("result.png", image);        // save the image
+		//imwrite("result.png", image);        // save the image
 
 		imshow("SVM Simple Example", image); // show it to the user
 		waitKey(0);
-
+		return 0;
 }
-
+void svmTrain(){
+	bfs::path p("C:\\Users\\Administrator\\Desktop\\1101214006_hw3\\text");
+	bfs::directory_iterator it(p),endIter;
+	vector<vector<float> >trainVector;
+	vector<float> trainLabelVector;
+	for(;it!=endIter;it++){
+		string path=it->path().string();
+		//cout<<path<<endl;
+		Mat grayImage=imread(path,0);
+		vector<float> t=GenerateHogFeature(grayImage);
+		trainVector.push_back(t);
+		trainLabelVector.push_back(1);
+	}
+	p=bfs::path("C:\\Users\\Administrator\\Desktop\\1101214006_hw3\\nontext" );
+	it=bfs::directory_iterator(p);
+	for(;it!=endIter;it++){
+		string path=it->path().string();
+		//cout<<path<<endl;
+		Mat grayImage=imread(path,0);
+		vector<float> t=GenerateHogFeature(grayImage);
+		trainVector.push_back(t);
+		trainLabelVector.push_back(-1);
+	}
+	Mat trainData=Mat(trainVector.size(),trainVector[0].size(),CV_32FC1);
+	for(int i=0;i<trainVector.size();++i){
+		for(int j=0;j<trainVector[i].size();++j){
+			trainData.at<float>(i,j)=trainVector[i][j];
+		}
+	}
+	Mat trainLabel=Mat(trainLabelVector.size(),1,CV_32FC1,trainLabelVector.data());
+	// Set up SVM's parameters
+	CvSVMParams params;
+	params.svm_type    = CvSVM::C_SVC;
+	params.kernel_type = CvSVM::RBF;
+	params.term_crit   = cvTermCriteria(CV_TERMCRIT_ITER, 100, 1e-6);
+	// Train the SVM
+	CvSVM SVM;
+	SVM.train(trainData, trainLabel, Mat(), Mat(), params);
+	//SVM.train_auto(trainData,trainLabel,Mat(), Mat(), params);
+	cout<<"train SVM complete\n";
+	SVM.save("e:\\400_svm.xml");
+}
 int svm(){
 
+	FileStorage fs("e:\\vocabulary.xml", FileStorage::WRITE);
+	//fs<<"truth"<<trainLabel;
+	
+	//cout<<trainData.rows<<"\t"<<trainData.cols<<endl;
+	//cout<<trainLabel.rows<<"\t"<<trainLabel.cols<<endl;
+	
+	fs.release();
+	CvSVM SVM;
+	SVM.load("e:\\400_svm.xml");
+	cout<<"load SVM complete\n";
+	int err=0,testNum=0;
+	Mat predictData(1,81,CV_32FC1);
+	clock_t start=clock();
+	bfs::path p;
+	bfs::directory_iterator it,endIter;
+	p=bfs::path("E:\\positive" );
+	it=bfs::directory_iterator(p);
+	for(;it!=endIter;it++){
+		string path=it->path().string();
+		//cout<<path<<endl;
+		Mat grayImage=imread(path,0);
+		vector<float> t=GenerateHogFeature(grayImage);
+		for(int i=0;i<t.size();++i){
+			predictData.at<float>(i)=t[i];
+			//cout<<t[i]<<endl;
+		}
+		//cout<<predictData.rows<<"\t"<<predictData.cols<<endl;
+		float response=SVM.predict(predictData);
+		if(response<0)++err;
+		++testNum;
+	}
+	//p=bfs::path("C:\\Users\\Administrator\\Desktop\\1101214006_hw3\\nontext_validation" );
+	//it=bfs::directory_iterator(p);
+	//for(;it!=endIter;it++){
+	//	string path=it->path().string();
+	//	//cout<<path<<endl;
+	//	Mat grayImage=imread(path,0);
+	//	vector<float> t=GenerateHogFeature(grayImage);
+	//	for(int i=0;i<t.size();++i){
+	//		predictData.at<float>(i)=t[i];
+	//		//cout<<t[i]<<endl;
+	//	}
+	//	//cout<<predictData.rows<<"\t"<<predictData.cols<<endl;
+	//	float response=SVM.predict(predictData);
+	//	if(response>0)++err;
+	//	++testNum;
+	//}
+	cout<<testNum<<"images, time costs: "<<double(clock()-start)/CLOCKS_PER_SEC<<"s\n";
+	cout<<"error:"<<err<<endl;
+	cout<<"precision:"<<1-err*1.0/testNum<<endl;
 	return 0;
+}
+
+int main(){
+	svm();
 }
