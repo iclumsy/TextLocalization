@@ -154,7 +154,7 @@ void ComputeVariation(ccRegion *root,int delta,double min_aspect_ratio,double ma
 		child=child->next;
 	}
 }
-void ComputeStrokeWidthHelper(Mat &img,int level,double startx,double starty,double diagonallength,double xincrease,double yincrease,int &strokewidth){
+void ComputeStrokeWidthHelper(Mat &img,int level,int color,double startx,double starty,double diagonallength,double xincrease,double yincrease,int &strokewidth){
 	int currentwidth=0;
 	double x=startx,y=starty;
 	for(int i=0;i<diagonallength;++i){
@@ -163,7 +163,7 @@ void ComputeStrokeWidthHelper(Mat &img,int level,double startx,double starty,dou
 			break;
 		}
 		//cout<<"tx:"<<tx<<"\tty:"<<ty<<endl;
-		if(img.at<uchar>(ty,tx)>=level){
+		if(img.at<uchar>(ty,tx)*color>=level*color){
 			currentwidth++;
 		}
 		else{
@@ -176,19 +176,20 @@ void ComputeStrokeWidthHelper(Mat &img,int level,double startx,double starty,dou
 		y+=yincrease;
 	}
 }
-int ComputeStrokeWidth(Mat &img,Rect rect,int level){
+int ComputeStrokeWidth(Mat &img,Rect rect,int level,int color){
 	double xincrease,yincrease,diagonallength;
 	diagonallength=sqrt(rect.width*rect.width+rect.height*rect.height);
 	xincrease=rect.width/diagonallength;
 	yincrease=rect.height/diagonallength;
 	int strokewidth=INT_MAX;
-	ComputeStrokeWidthHelper(img,level,rect.x,rect.y,diagonallength,xincrease,yincrease,strokewidth);
-	ComputeStrokeWidthHelper(img,level,rect.x,rect.y+rect.height,diagonallength,xincrease,-yincrease,strokewidth);
-	ComputeStrokeWidthHelper(img,level,rect.x+0.5*rect.width,rect.y,diagonallength,0,yincrease,strokewidth);
-	ComputeStrokeWidthHelper(img,level,rect.x,rect.y+0.5*rect.height,diagonallength,xincrease,0,strokewidth);
+	ComputeStrokeWidthHelper(img,level,color,rect.x,rect.y,diagonallength,xincrease,yincrease,strokewidth);
+	ComputeStrokeWidthHelper(img,level,color,rect.x,rect.y+rect.height,diagonallength,xincrease,-yincrease,strokewidth);
+	ComputeStrokeWidthHelper(img,level,color,rect.x+0.5*rect.width,rect.y,diagonallength,0,yincrease,strokewidth);
+	ComputeStrokeWidthHelper(img,level,color,rect.x,rect.y+0.5*rect.height,diagonallength,xincrease,0,strokewidth);
 	return strokewidth;
 }
 void ComputeFeature(Mat &img,ccRegion eru,ccRegion erv,vector<double> &featureVector){
+	featureVector.clear();
 	Rect u=eru.rect,v=erv.rect;
 	//spatial distance 
 	double spatialdistance=abs(u.x+0.5*u.height-v.x-0.5*u.width)*1.0/max(u.width,v.width);
@@ -221,14 +222,15 @@ void ComputeFeature(Mat &img,ccRegion eru,ccRegion erv,vector<double> &featureVe
 	//color difference
 
 	//stroke width difference
-	int ustrokewidth=1;//ComputeStrokeWidth(img,u,eru.level);
-	int vstrokewidth=1;//ComputeStrokeWidth(img,v,erv.level);
-	double strokewidthdifference=abs(ustrokewidth-vstrokewidth)/max(ustrokewidth,vstrokewidth);
+	int ustrokewidth=ComputeStrokeWidth(img,u,eru.level,eru.color);
+	int vstrokewidth=ComputeStrokeWidth(img,v,erv.level,erv.color);
+	double strokewidthdifference=abs(ustrokewidth-vstrokewidth)*1.0/max(ustrokewidth,vstrokewidth);
 	featureVector.push_back(strokewidthdifference);
 }
 double ComputeDistance(Mat &img,ccRegion eru,ccRegion erv,vector<double> &featureWeights){
 	vector<double> featureVector;
 	ComputeFeature(img,eru,erv,featureVector);
+	//cout<<eru.level<<"\t"<<erv.level<<endl;
 	assert(featureVector.size()==featureWeights.size());
 	double ret=0;
 	for(size_t i=0;i<featureWeights.size();++i){
@@ -348,7 +350,7 @@ vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vec
 				//imwrite("e://mserout//"+a+".jpg",draw(data[A[i][j]]->rect));
 				//cout<<A[i][j]<<std::endl;
 			}
-			rectangle(draw,tmp,Scalar(0,0,255),2);
+			//rectangle(draw,tmp,Scalar(0,0,255),2);
 			res.push_back(tmpre);
 		}
 	}
@@ -403,25 +405,6 @@ vector<double> GenerateFeature(Mat &img,Rect rect){
 	res[2]=rect.height*1.0/rect.width;
 
 	res[3]=ComputeStrokeWidth(img,rect);
-	vector<float> hogFeature;
-	int width=rect.width/3;
-	int height=rect.height/3;
-	HOGDescriptor hog;
-	Mat cur=img(rect);
-	hog.winSize=Size(width*3,height*3);
-	hog.blockSize=Size(width,height);
-	hog.cellSize=Size(width,height);
-	hog.blockStride=Size(width,height);
-	vector<Point> location;
-	// 滑动窗只有一个，指定top-left位置
-	location.push_back(Point(0,0));
-	cout << "block dimensions: " << width << " width x " << height << "height" << endl;	
-	cout<<"Calculating the HOG descriptors..."<<endl;
-	hog.compute(cur,hogFeature,hog.blockSize,Size(0,0),location);
-	cout << "HOG descriptor size is " << hog.getDescriptorSize() << endl;
-	cout << "img dimensions: " << cur.cols << " width x " << cur.rows << "height" << endl;
-	cout << "Found " << hogFeature.size() << " descriptor values" << endl;
-	//for(int i=0;i<hogFeature.size();i++)cout<<hogFeature[i]<<endl;
 	return res;
 }
 vector<float> GenerateHogFeature(Mat &img){
@@ -554,7 +537,7 @@ for(int i=0;i<regions.size();i++){
 	return 0;
 }
 
-int main2(int argc, char** argv){
+int lr(int argc, char** argv){
 
 	Mat Data = (Mat_<double>(150, 4)<< 5.1,3.5,1.4,0.2, 4.9,3.0,1.4,0.2, 4.7,3.2,1.3,0.2, 4.6,3.1,1.5,0.2, 5.0,3.6,1.4,0.2, 5.4,3.9,1.7,0.4, 4.6,3.4,1.4,0.3, 5.0,3.4,1.5,0.2, 4.4,2.9,1.4,0.2, 4.9,3.1,1.5,0.1, 5.4,3.7,1.5,0.2, 4.8,3.4,1.6,0.2, 4.8,3.0,1.4,0.1, 4.3,3.0,1.1,0.1, 5.8,4.0,1.2,0.2, 5.7,4.4,1.5,0.4, 5.4,3.9,1.3,0.4, 5.1,3.5,1.4,0.3, 5.7,3.8,1.7,0.3, 5.1,3.8,1.5,0.3, 5.4,3.4,1.7,0.2, 5.1,3.7,1.5,0.4, 4.6,3.6,1.0,0.2, 5.1,3.3,1.7,0.5, 4.8,3.4,1.9,0.2, 5.0,3.0,1.6,0.2, 5.0,3.4,1.6,0.4, 5.2,3.5,1.5,0.2, 5.2,3.4,1.4,0.2, 4.7,3.2,1.6,0.2, 4.8,3.1,1.6,0.2, 5.4,3.4,1.5,0.4, 5.2,4.1,1.5,0.1, 5.5,4.2,1.4,0.2, 4.9,3.1,1.5,0.1, 5.0,3.2,1.2,0.2, 5.5,3.5,1.3,0.2, 4.9,3.1,1.5,0.1, 4.4,3.0,1.3,0.2, 5.1,3.4,1.5,0.2, 5.0,3.5,1.3,0.3, 4.5,2.3,1.3,0.3, 4.4,3.2,1.3,0.2, 5.0,3.5,1.6,0.6, 5.1,3.8,1.9,0.4, 4.8,3.0,1.4,0.3, 5.1,3.8,1.6,0.2, 4.6,3.2,1.4,0.2, 5.3,3.7,1.5,0.2, 5.0,3.3,1.4,0.2, 7.0,3.2,4.7,1.4, 6.4,3.2,4.5,1.5, 6.9,3.1,4.9,1.5, 5.5,2.3,4.0,1.3, 6.5,2.8,4.6,1.5, 5.7,2.8,4.5,1.3, 6.3,3.3,4.7,1.6, 4.9,2.4,3.3,1.0, 6.6,2.9,4.6,1.3, 5.2,2.7,3.9,1.4, 5.0,2.0,3.5,1.0, 5.9,3.0,4.2,1.5, 6.0,2.2,4.0,1.0, 6.1,2.9,4.7,1.4, 5.6,2.9,3.6,1.3, 6.7,3.1,4.4,1.4, 5.6,3.0,4.5,1.5, 5.8,2.7,4.1,1.0, 6.2,2.2,4.5,1.5, 5.6,2.5,3.9,1.1, 5.9,3.2,4.8,1.8, 6.1,2.8,4.0,1.3, 6.3,2.5,4.9,1.5, 6.1,2.8,4.7,1.2, 6.4,2.9,4.3,1.3, 6.6,3.0,4.4,1.4, 6.8,2.8,4.8,1.4, 6.7,3.0,5.0,1.7, 6.0,2.9,4.5,1.5, 5.7,2.6,3.5,1.0, 5.5,2.4,3.8,1.1, 5.5,2.4,3.7,1.0, 5.8,2.7,3.9,1.2, 6.0,2.7,5.1,1.6, 5.4,3.0,4.5,1.5, 6.0,3.4,4.5,1.6, 6.7,3.1,4.7,1.5, 6.3,2.3,4.4,1.3, 5.6,3.0,4.1,1.3, 5.5,2.5,4.0,1.3, 5.5,2.6,4.4,1.2, 6.1,3.0,4.6,1.4, 5.8,2.6,4.0,1.2, 5.0,2.3,3.3,1.0, 5.6,2.7,4.2,1.3, 5.7,3.0,4.2,1.2, 5.7,2.9,4.2,1.3, 6.2,2.9,4.3,1.3, 5.1,2.5,3.0,1.1, 5.7,2.8,4.1,1.3, 6.3,3.3,6.0,2.5, 5.8,2.7,5.1,1.9, 7.1,3.0,5.9,2.1, 6.3,2.9,5.6,1.8, 6.5,3.0,5.8,2.2, 7.6,3.0,6.6,2.1, 4.9,2.5,4.5,1.7, 7.3,2.9,6.3,1.8, 6.7,2.5,5.8,1.8, 7.2,3.6,6.1,2.5, 6.5,3.2,5.1,2.0, 6.4,2.7,5.3,1.9, 6.8,3.0,5.5,2.1, 5.7,2.5,5.0,2.0, 5.8,2.8,5.1,2.4, 6.4,3.2,5.3,2.3, 6.5,3.0,5.5,1.8, 7.7,3.8,6.7,2.2, 7.7,2.6,6.9,2.3, 6.0,2.2,5.0,1.5, 6.9,3.2,5.7,2.3, 5.6,2.8,4.9,2.0, 7.7,2.8,6.7,2.0, 6.3,2.7,4.9,1.8, 6.7,3.3,5.7,2.1, 7.2,3.2,6.0,1.8, 6.2,2.8,4.8,1.8, 6.1,3.0,4.9,1.8, 6.4,2.8,5.6,2.1, 7.2,3.0,5.8,1.6, 7.4,2.8,6.1,1.9, 7.9,3.8,6.4,2.0, 6.4,2.8,5.6,2.2, 6.3,2.8,5.1,1.5, 6.1,2.6,5.6,1.4, 7.7,3.0,6.1,2.3, 6.3,3.4,5.6,2.4, 6.4,3.1,5.5,1.8, 6.0,3.0,4.8,1.8, 6.9,3.1,5.4,2.1, 6.7,3.1,5.6,2.4, 6.9,3.1,5.1,2.3, 5.8,2.7,5.1,1.9, 6.8,3.2,5.9,2.3, 6.7,3.3,5.7,2.5, 6.7,3.0,5.2,2.3, 6.3,2.5,5.0,1.9, 6.5,3.0,5.2,2.0, 6.2,3.4,5.4,2.3, 5.9,3.0,5.1,1.8);
 	Mat Labels = (Mat_<int>(150, 1)<< 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3);
@@ -596,7 +579,7 @@ int main2(int argc, char** argv){
 	cout<<"done"<<endl;
 
 	lr_.print_learnt_mats();
-
+	 
 	CvMLData cvml;
 
 
@@ -647,7 +630,7 @@ int main2(int argc, char** argv){
 	return 0;
 }
 
-int main3(){
+int main78(){
 	string p;
 	//p="C:\\Users\\Administrator\\Desktop\\mser\\385.jpg";
 	string configFile="config.txt";
@@ -673,9 +656,9 @@ int main3(){
 		if(regions[i].parent==NULL){
 			//cnt++;
 			//cout<<"root var:"<<regions[i].var<<"\tarea:"<<regions[i].area<<"\n";
-			char b[100];
-			sprintf(b,"%f",regions[i].var);
-			string a(b);
+			//char b[100];
+			//sprintf(b,"%f",regions[i].var);
+			//string a(b);
 			//imwrite("e://mserout//root-"+a+".jpg",draw(regions[i].rect));
 			Union(res,TreeAccumulation(LinearReduction(&regions[i])));
 			//breadth(&regions[i]);
@@ -686,7 +669,33 @@ int main3(){
 	}
 	cout<<"after LinearReduction and TreeAccumulation:"<<res.size()<<endl;
 	vector<double> featureWeights(7,1);
+	string featureWeightsString=config["feature_weights"];
+	int send,sbegin=0;
+	for(int i=0;i<featureWeights.size();i++){
+		send=featureWeightsString.find(",",sbegin);
+		featureWeights[i]=atof(featureWeightsString.substr(sbegin,send).c_str());
+		sbegin=send+1;
+	}
 	vector<vector<int>> clusterResult=HierarchicalClustering(image,res,featureWeights,thres);
+	cout<<"after HierarchicalClustering:"<<clusterResult.size()<<endl;
+	CvSVM SVM;
+	SVM.load("e:\\400_svm.xml");
+	cout<<"load SVM complete\n";
+	Mat predictData(1,81,CV_32FC1);
+	Mat duibi=imread(p,1);
+	for(int j=0;j<clusterResult.size();++j){
+		Rect tmp=res[clusterResult[j][0]]->rect;
+		for(int k=1;k<clusterResult[j].size();++k){
+			tmp=tmp|res[clusterResult[j][k]]->rect;
+		}
+		vector<float> t=GenerateHogFeature(image(tmp));
+		for(int i=0;i<t.size();++i){
+			predictData.at<float>(i)=t[i];
+		}
+		float response=SVM.predict(predictData);
+		if(response>0)rectangle(draw,tmp,Scalar(0,255,0),2);
+		else rectangle(draw,tmp,Scalar(0,0,255),2);
+	}
 	//for(int i=0;i<clusterResult.size();i++){
 	//	cout<<i<<":\t";
 	//	for(int j=0;j<clusterResult[i].size();j++){
@@ -704,7 +713,8 @@ int main3(){
 	//CvContour* tmp=(CvContour*)*it;
 	//imshow("Color mser", draw);
 	cout<<"time costs: "<<double(clock()-start)/CLOCKS_PER_SEC<<"s\n";
-	imshow("result.jpg", draw);
+	imshow("with SVM", draw);
+	//imshow("without SVM", duibi);
 	waitKey(0);
 	return 0;
 }
@@ -726,11 +736,11 @@ vector<Rect> readGroundTruth(string fileName){
 		//cout<<endl;
 		Rect tmpRect(Point(a[0],a[1]),Point(a[2],a[3]));
 		res.push_back(tmpRect);
-		rectangle(draw,tmpRect,Scalar(0,0,255),2);
+		//rectangle(draw,tmpRect,Scalar(0,0,255),2);
 	}
 	return res;
 }
-int main0(){
+int main11(){
 	string configFile="config.txt";
 	map<string, string> config;
 	ReadConfig(configFile, config);
@@ -749,7 +759,7 @@ int main0(){
 	//CvSeq *contours;
 	vector<ccRegion> regions;
 	int ii=1;
-	for(;it!=endIter;it++){
+	for(;it==endIter;it++){
 		string path=it->path().string();
 		//cout<<path<<endl;
 		Mat grayImage=imread(path,0);
@@ -780,7 +790,7 @@ int main0(){
 		++ii;
 		//break;
 	}
-	for(int i=101;i<=100;++i){
+	for(int i=101;i<=101;++i){
 		string p,gt;
 		string a=lexical_cast <string>(i);
 		cout<<i<<endl;
@@ -807,28 +817,31 @@ int main0(){
 			//cout<<"strkoe width:\t"<<t[3]<<endl;
 			//break;
 		}
-		//Mat image = imread(p, 0);
-		//ccMSER t(5, 60, 1440,0.25, 0.2,200, 1.01,0.003, 5);
-		//vector<ccRegion> regions;
-		//t(image,regions);
-		//vector<ccRegion *> res;
-		//for(int i=0;i<regions.size();i++){
-		//	if(regions[i].parent==NULL){
-		//		Union(res,TreeAccumulation(LinearReduction(&regions[i])));
-		//	}
-		//}
-		//cout<<"after LinearReduction and TreeAccumulation:"<<res.size()<<endl;
-		//vector<double> featureWeights(7,1);
-		//vector<vector<int>> clusterResult=HierarchicalClustering(image,res,featureWeights,thres);
-		//for(int j=0;j<clusterResult.size();++j){
-		//	Rect tmp=res[clusterResult[j][0]]->rect;
-		//	for(int k=1;k<clusterResult[j].size();++k){
-		//		tmp=tmp|res[clusterResult[j][k]]->rect;
-		//	}
-		//}
+		Mat image = imread(p, 0);
+		draw=imread(p,0);
+		ccMSER t(5, 60, 1440,0.25, 0.2,200, 1.01,0.003, 5);
+		vector<ccRegion> regions;
+		t(image,regions);
+		vector<ccRegion *> res;
+		for(int i=0;i<regions.size();i++){
+			if(regions[i].parent==NULL){
+				Union(res,TreeAccumulation(LinearReduction(&regions[i])));
+			}
+		}
+		cout<<"after LinearReduction and TreeAccumulation:"<<res.size()<<endl;
+		vector<double> featureWeights(7,1);
+		vector<vector<int>> clusterResult=HierarchicalClustering(image,res,featureWeights,thres);
+		cout<<"after HierarchicalClustering:"<<clusterResult.size()<<endl;
+		for(int j=0;j<clusterResult.size();++j){
+			Rect tmp=res[clusterResult[j][0]]->rect;
+			for(int k=1;k<clusterResult[j].size();++k){
+				tmp=tmp|res[clusterResult[j][k]]->rect;
+			}
+			rectangle(draw,tmp,Scalar(0,0,255),2);
+		}
 	}
-	//imshow("result.jpg", draw);
-	//waitKey(0);
+	imshow("result.jpg", draw);
+	waitKey(0);
 	return 0;
 }
 
@@ -991,6 +1004,101 @@ int svm(){
 	return 0;
 }
 
+
+int cejisuanbixiankuandu(){
+	string p;
+	p="C:\\Users\\Administrator\\Desktop\\mser\\do.jpg";
+	Mat image = imread(p, 0);
+	Rect t=Rect(0,0,image.rows,image.cols);
+	int strokeWidth=ComputeStrokeWidth(image,t,128,-1);
+	//FileStorage fs("C:\\Users\\Administrator\\Desktop\\mser\\t.xml",FileStorage::WRITE);
+	//fs<<"t"<<image;
+	//fs.release();
+	ofstream f("C:\\Users\\Administrator\\Desktop\\mser\\t.txt");
+	f<<image;
+	f.close();
+	cout<<strokeWidth<<endl;
+	return 0;
+}
+
+int xunlianjulicanshu(){
+	ofstream f("e:\\julixunlian.txt");
+	vector<map<pair<int,int>,vector<vector<double> > > >feature;
+	for(int i=100;i<=105;++i){
+		string p,gt;
+		string a=lexical_cast <string>(i);
+		cout<<i<<endl;
+		p="E:\\train-textloc\\"+a+".jpg";
+		gt="E:\\train-textloc\\gt_"+a+".txt"; 
+		//draw = imread(p, 1);
+		vector<Rect> groundTruthRect=readGroundTruth(gt);
+		if(groundTruthRect.size()<2){
+			continue;
+		}
+		Mat grayImg=imread(p,0);
+		vector<vector<ccRegion> >regions;
+		vector<vector<ccRegion *> >resultRegionPtr;
+		regions.resize(groundTruthRect.size());
+		ccMSER t(5, 60, 1440,0.25, 0.2,200, 1.01,0.003, 5);
+		map<pair<int,int>,vector<vector<double> > > imageFeature;
+		for(int j=0;j<groundTruthRect.size();++j){
+			t(grayImg(groundTruthRect[j]),regions[j]);
+			vector<ccRegion *> res;
+			for(int k=0;k<regions[j].size();k++){
+				if(regions[j][k].parent==NULL){
+					Union(res,TreeAccumulation(LinearReduction(&regions[j][k])));
+				}
+			}
+			for(int k=0;k<res.size();++k){
+				(*res[k]).rect.x+=groundTruthRect[j].x;
+				(*res[k]).rect.y+=groundTruthRect[j].y;
+			}
+			resultRegionPtr.push_back(res);
+		}
+		vector<double> featureVector;
+		for(int j=0;j<resultRegionPtr.size();++j){
+			for(int k=j;k<resultRegionPtr.size();++k){
+				vector<vector<double> > mserFeature;
+				if(j==k){
+					for(int p=0;p<resultRegionPtr[j].size();++p){
+						for(int q=p+1;q<resultRegionPtr[j].size();++q){
+							ComputeFeature(grayImg,*(resultRegionPtr[j][p]),*(resultRegionPtr[j][q]),featureVector);
+							f<<"1";
+							for(int r=0;r<featureVector.size();++r){
+								f<<"\t"<<featureVector[r];
+							}
+							f<<"\n";
+							mserFeature.push_back(featureVector);
+						}
+					}
+				}
+				else{
+					for(int p=0;p<resultRegionPtr[j].size();++p){
+						for(int q=0;q<resultRegionPtr[k].size();++q){
+							ComputeFeature(grayImg,*(resultRegionPtr[j][p]),*(resultRegionPtr[k][q]),featureVector);
+							f<<"-1";
+							for(int r=0;r<featureVector.size();++r){
+								f<<"\t"<<featureVector[r];
+							}
+							f<<"\n";
+							mserFeature.push_back(featureVector);
+						}
+					}
+				}
+				imageFeature[make_pair(j,k)]=mserFeature;
+			}
+		}
+		cout<<"map:"<<imageFeature.size()<<endl;
+		cout<<"region:"<<resultRegionPtr.size()<<endl;
+		feature.push_back(imageFeature);
+	}
+	cout<<"done\n";
+	return 0;
+}
+
+
 int main(){
-	svm();
+	//svm();
+	xunlianjulicanshu();
+	return 0;
 }
