@@ -26,6 +26,7 @@ public:
 	ccRegion* next;
 	ccRegion* prev;
 	int level;
+	int color; //-1 darker to brighter   1 brighter to darker
 	vector<Point> points;
 };
 class ccMSER //: public cv::FeatureDetector

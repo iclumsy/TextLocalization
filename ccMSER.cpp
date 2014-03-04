@@ -421,7 +421,7 @@ static CvContour* ccMSERToContour( ccMSERConnectedComp* comp, CvMemStorage* stor
 
 	comp->children = contour;
 	//chengchao
-
+	contour->reserved[0]=comp->grey_level;//chengchao save the level
 	return contour;
 }
 
@@ -1404,7 +1404,8 @@ void ccMSER::operator()( const Mat& image, vector<ccRegion> &regions, const Mat&
 	SeqIterator<CvSeq*> it = contours.begin();
 	size_t i, ncontours = contours.size();
 	for( i = 0; i < ncontours; i++, ++it ) { 
-		((CvContour *)*it)->color = (int)i; 
+		((CvContour *)*it)->reserved[1]=((CvContour *)*it)->color;
+		((CvContour *)*it)->color = (int)i;
 	} 
 	hierarchy.resize(ncontours);
 	regions.resize(ncontours);
@@ -1420,13 +1421,15 @@ void ccMSER::operator()( const Mat& image, vector<ccRegion> &regions, const Mat&
 		hierarchy[i] = Vec4i(h_next, h_prev, v_next, v_prev);
 	}
 
-	std::cout << "Number of MSERs: " << contours.seq->total << std::endl;
+	//std::cout << "Number of MSERs: " << contours.seq->total << std::endl;
 	it = contours.begin();
 	for( i = 0; i < ncontours; i++, ++it ){
 		Seq<Point>(*it).copyTo(regions[i].points);
 		CvContour* c = (CvContour *)*it;
 		regions[i].rect=c->rect;
 		regions[i].var=varMap[c];
+		regions[i].level=c->reserved[0];
+		regions[i].color=c->reserved[1];
 		regions[i].parent=hierarchy[i][3]>=0?&regions[hierarchy[i][3]]:NULL;
 		regions[i].child=hierarchy[i][2]>=0?&regions[hierarchy[i][2]]:NULL;//&&c->h_prev==NULL
 		regions[i].next=hierarchy[i][0]>=0?&regions[hierarchy[i][0]]:NULL;
