@@ -72,7 +72,7 @@ bool LogisticRegression::CvLR::train(const Mat& DataI, const Mat& LabelsI)
 	CV_Assert(LabelsI.rows == DataT.rows);
 
 	cout<<"num_classes = "<<num_classes<<endl;
-	cout<<LabelsI<<endl;
+	//cout<<LabelsI<<endl;
 	CV_Assert(num_classes>=2);
 
 	Mat Data;
@@ -206,7 +206,9 @@ float LogisticRegression::CvLR::predict(const Mat& Data, cv::Mat& PredLabs)
 		TempPred = LogisticRegression::CvLR::calc_sigmoid(DataT*Thetas.t());
 		CV_Assert(TempPred.cols==1);
 		// if greater than 0.5, predict class 0 or predict class 1
-		TempPred = (TempPred>0.5)/255;
+		//cout<<TempPred<<endl;
+		TempPred = (TempPred>0.6)/255;
+		
 		TempPred.convertTo(CLabels, CV_32S);
 	}
 	
@@ -215,6 +217,7 @@ float LogisticRegression::CvLR::predict(const Mat& Data, cv::Mat& PredLabs)
 		for(int i = 0;i<Thetas.rows;i++)
 		{
 			TempPred = LogisticRegression::CvLR::calc_sigmoid(DataT * Thetas.row(i).t());
+			
 			cv::vconcat(TempPred, MPred.col(i));
 		}
 

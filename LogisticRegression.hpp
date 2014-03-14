@@ -87,11 +87,12 @@ namespace LogisticRegression
 		float predict(const Mat& Data, cv::Mat& PredLabs);
 		float predict(const Mat& Data);
 		void print_learnt_mats();
+		cv::Mat learntThetas;
 
 	protected:
 		std::map<int, int> forward_mapper;
 		std::map<int, int> reverse_mapper;
-		cv::Mat learntThetas;
+		
 
 		CvLR_TrainParams params;
 

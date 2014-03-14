@@ -12,6 +12,7 @@
 #include "ccMSER.h"
 #include <time.h>
 #include "ReadConfig.h"
+#include "lr.h"
 using namespace std;
 using namespace cv;
 using namespace LogisticRegression;
@@ -259,7 +260,33 @@ struct Cmp{
 		return d1.dist < d2.dist;
 	}
 };
-
+vector<double> ComputeGrowRate(vector<ccRegion *> &data,vector<int> &a,vector<int> &b,int &smaller){
+	Rect aRect=(*data[a[0]]).rect,bRect=(*data[b[0]]).rect;
+	for(int i=1;i<a.size();++i){
+		aRect=aRect|(*data[a[i]]).rect;
+	}
+	for(int i=1;i<b.size();++i){
+		bRect=bRect|(*data[b[i]]).rect;
+	}
+	Rect whole=aRect|bRect;
+	double areaGrowRate=(whole.area()-max(aRect.area(),bRect.area()))*1.0/max(aRect.area(),bRect.area());
+	double widthGrowRate=(whole.width-max(aRect.width,bRect.width))*1.0/max(aRect.width,bRect.width);
+	double heightGrowRate=(whole.height-max(aRect.height,bRect.height))*1.0/max(aRect.height,bRect.height);
+	smaller=aRect.width>bRect.width?1:0;
+	//cout<<"width grow rate:"<<widthGrowRate<<endl;
+	//cout<<"area grow rate:"<<ret<<endl;
+	vector<double> ret;
+	ret.push_back(areaGrowRate);
+	ret.push_back(widthGrowRate);
+	ret.push_back(heightGrowRate);
+	if(0&&widthGrowRate<0.00001){
+		imshow("a",draw(aRect));
+		imshow("b",draw(bRect));
+		imshow("whole",draw(whole));
+		waitKey();
+	}
+	return ret;
+}
 vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vector<double> &featureweights,double threshold) {
 	int N=data.size();
 	vector<vector<distances> >dist;// 2d vector for storing distances matrix
@@ -283,6 +310,7 @@ vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vec
 			//cout<<i<<"\t"<<j<<"\t"<<dist[i][j].dist<<endl;
 		}
 	}
+	vector<double> growRate;
 	while(1){
 		double min_dist = INT_MAX;
 		int min_index = 0;
@@ -295,18 +323,53 @@ vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vec
 			}
 		}
 		//cout<<"min dist:\t"<<min_dist<<endl;
+		if(min_dist>15){
+			cout<<"haole\n";
+		}
 		if(min_dist>threshold){
-			//break;
+			break;
 		}
 		// we have minimum distance
 		// k1, k2 - indexes of most nearest clusters
 		int k1 = min_index;
 		int k2 = P[k1].begin()->index;
-
-		Rect tmp=data[k1]->rect|data[k2]->rect;
-		if((data[k1]->rect.area()+data[k2]->rect.area())*1.0/tmp.area()<threshold){
-			break;
+		
+		int smaller;
+		vector<double> currentGrowRate=ComputeGrowRate(data,A[k1],A[k2],smaller);
+		growRate.push_back(currentGrowRate[1]);
+		//check
+		int cnt=0;
+		for(int i=growRate.size()-1;i>=0&&i>=growRate.size()-4;--i){
+			if(growRate[i]<0.0001){
+				cnt++;
+			}
 		}
+		if(cnt>=4){
+			//break;
+		}
+		if(currentGrowRate[1]<currentGrowRate[2]){
+			int toBeClear=smaller>0?k2:k1;
+			//k2=toBeClear;
+			P[k1].erase(dist[k1][k2]);
+			P[k2].erase(dist[k2][k1]);
+			//// clear the second cluster
+			//if(A[k2].size()<10){
+			//	active[k2] = 0;
+			//}
+			//// O(N*log(N))
+			//for(int i=0; i<N; ++i){
+			//	// O(log(N)): insert, erase operations
+			//	if(active[i]!=0){
+			//		P[i].erase(dist[i][k2]);
+			//	}
+			//}
+			//cout<<"cashule"<<toBeClear<<"\n";
+			continue;
+		}
+		//Rect tmp=data[k1]->rect|data[k2]->rect;
+		//if((data[k1]->rect.area()+data[k2]->rect.area())*1.0/tmp.area()<threshold){
+		//	break;
+		//}
 
 		int N_k1 = A[k1].size();
 		int N_k2 = A[k2].size();
@@ -335,7 +398,7 @@ vector<vector<int>> HierarchicalClustering(Mat &img,vector<ccRegion *> &data,vec
 	int class_num = 0;
 	for(int i=0; i<N; ++i)
 	{
-		if(active[i]==1&&A[i].size()>1)//
+		if(active[i]==1&&A[i].size()>1)//取大于1的类
 		{
 			Rect tmp=data[A[i][0]]->rect;
 			++class_num;
@@ -537,7 +600,7 @@ for(int i=0;i<regions.size();i++){
 	return 0;
 }
 
-int lr(int argc, char** argv){
+int lr(){
 
 	Mat Data = (Mat_<double>(150, 4)<< 5.1,3.5,1.4,0.2, 4.9,3.0,1.4,0.2, 4.7,3.2,1.3,0.2, 4.6,3.1,1.5,0.2, 5.0,3.6,1.4,0.2, 5.4,3.9,1.7,0.4, 4.6,3.4,1.4,0.3, 5.0,3.4,1.5,0.2, 4.4,2.9,1.4,0.2, 4.9,3.1,1.5,0.1, 5.4,3.7,1.5,0.2, 4.8,3.4,1.6,0.2, 4.8,3.0,1.4,0.1, 4.3,3.0,1.1,0.1, 5.8,4.0,1.2,0.2, 5.7,4.4,1.5,0.4, 5.4,3.9,1.3,0.4, 5.1,3.5,1.4,0.3, 5.7,3.8,1.7,0.3, 5.1,3.8,1.5,0.3, 5.4,3.4,1.7,0.2, 5.1,3.7,1.5,0.4, 4.6,3.6,1.0,0.2, 5.1,3.3,1.7,0.5, 4.8,3.4,1.9,0.2, 5.0,3.0,1.6,0.2, 5.0,3.4,1.6,0.4, 5.2,3.5,1.5,0.2, 5.2,3.4,1.4,0.2, 4.7,3.2,1.6,0.2, 4.8,3.1,1.6,0.2, 5.4,3.4,1.5,0.4, 5.2,4.1,1.5,0.1, 5.5,4.2,1.4,0.2, 4.9,3.1,1.5,0.1, 5.0,3.2,1.2,0.2, 5.5,3.5,1.3,0.2, 4.9,3.1,1.5,0.1, 4.4,3.0,1.3,0.2, 5.1,3.4,1.5,0.2, 5.0,3.5,1.3,0.3, 4.5,2.3,1.3,0.3, 4.4,3.2,1.3,0.2, 5.0,3.5,1.6,0.6, 5.1,3.8,1.9,0.4, 4.8,3.0,1.4,0.3, 5.1,3.8,1.6,0.2, 4.6,3.2,1.4,0.2, 5.3,3.7,1.5,0.2, 5.0,3.3,1.4,0.2, 7.0,3.2,4.7,1.4, 6.4,3.2,4.5,1.5, 6.9,3.1,4.9,1.5, 5.5,2.3,4.0,1.3, 6.5,2.8,4.6,1.5, 5.7,2.8,4.5,1.3, 6.3,3.3,4.7,1.6, 4.9,2.4,3.3,1.0, 6.6,2.9,4.6,1.3, 5.2,2.7,3.9,1.4, 5.0,2.0,3.5,1.0, 5.9,3.0,4.2,1.5, 6.0,2.2,4.0,1.0, 6.1,2.9,4.7,1.4, 5.6,2.9,3.6,1.3, 6.7,3.1,4.4,1.4, 5.6,3.0,4.5,1.5, 5.8,2.7,4.1,1.0, 6.2,2.2,4.5,1.5, 5.6,2.5,3.9,1.1, 5.9,3.2,4.8,1.8, 6.1,2.8,4.0,1.3, 6.3,2.5,4.9,1.5, 6.1,2.8,4.7,1.2, 6.4,2.9,4.3,1.3, 6.6,3.0,4.4,1.4, 6.8,2.8,4.8,1.4, 6.7,3.0,5.0,1.7, 6.0,2.9,4.5,1.5, 5.7,2.6,3.5,1.0, 5.5,2.4,3.8,1.1, 5.5,2.4,3.7,1.0, 5.8,2.7,3.9,1.2, 6.0,2.7,5.1,1.6, 5.4,3.0,4.5,1.5, 6.0,3.4,4.5,1.6, 6.7,3.1,4.7,1.5, 6.3,2.3,4.4,1.3, 5.6,3.0,4.1,1.3, 5.5,2.5,4.0,1.3, 5.5,2.6,4.4,1.2, 6.1,3.0,4.6,1.4, 5.8,2.6,4.0,1.2, 5.0,2.3,3.3,1.0, 5.6,2.7,4.2,1.3, 5.7,3.0,4.2,1.2, 5.7,2.9,4.2,1.3, 6.2,2.9,4.3,1.3, 5.1,2.5,3.0,1.1, 5.7,2.8,4.1,1.3, 6.3,3.3,6.0,2.5, 5.8,2.7,5.1,1.9, 7.1,3.0,5.9,2.1, 6.3,2.9,5.6,1.8, 6.5,3.0,5.8,2.2, 7.6,3.0,6.6,2.1, 4.9,2.5,4.5,1.7, 7.3,2.9,6.3,1.8, 6.7,2.5,5.8,1.8, 7.2,3.6,6.1,2.5, 6.5,3.2,5.1,2.0, 6.4,2.7,5.3,1.9, 6.8,3.0,5.5,2.1, 5.7,2.5,5.0,2.0, 5.8,2.8,5.1,2.4, 6.4,3.2,5.3,2.3, 6.5,3.0,5.5,1.8, 7.7,3.8,6.7,2.2, 7.7,2.6,6.9,2.3, 6.0,2.2,5.0,1.5, 6.9,3.2,5.7,2.3, 5.6,2.8,4.9,2.0, 7.7,2.8,6.7,2.0, 6.3,2.7,4.9,1.8, 6.7,3.3,5.7,2.1, 7.2,3.2,6.0,1.8, 6.2,2.8,4.8,1.8, 6.1,3.0,4.9,1.8, 6.4,2.8,5.6,2.1, 7.2,3.0,5.8,1.6, 7.4,2.8,6.1,1.9, 7.9,3.8,6.4,2.0, 6.4,2.8,5.6,2.2, 6.3,2.8,5.1,1.5, 6.1,2.6,5.6,1.4, 7.7,3.0,6.1,2.3, 6.3,3.4,5.6,2.4, 6.4,3.1,5.5,1.8, 6.0,3.0,4.8,1.8, 6.9,3.1,5.4,2.1, 6.7,3.1,5.6,2.4, 6.9,3.1,5.1,2.3, 5.8,2.7,5.1,1.9, 6.8,3.2,5.9,2.3, 6.7,3.3,5.7,2.5, 6.7,3.0,5.2,2.3, 6.3,2.5,5.0,1.9, 6.5,3.0,5.2,2.0, 6.2,3.4,5.4,2.3, 5.9,3.0,5.1,1.8);
 	Mat Labels = (Mat_<int>(150, 1)<< 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3);
@@ -578,9 +641,9 @@ int lr(int argc, char** argv){
 
 	cout<<"done"<<endl;
 
-	lr_.print_learnt_mats();
+	//lr_.print_learnt_mats();
 	 
-	CvMLData cvml;
+	/*CvMLData cvml;
 
 
 	cvml.read_csv("E:\\LR\\trunk\\src\\digitdata2.txt");
@@ -625,12 +688,12 @@ int lr(int argc, char** argv){
 	 	cout<<Labels.row(i)<<"\t"<<Responses1.row(i)<<"\t"<<Result.row(i)<<endl;
 	 }
 
-	cout<<"accuracy: "<<((double)cv::sum(Result)[0]/Result.rows)*100<<"%\n";
+	cout<<"accuracy: "<<((double)cv::sum(Result)[0]/Result.rows)*100<<"%\n";*/
 
 	return 0;
 }
 
-int main78(){
+int wanzhengceshi(){
 	string p;
 	//p="C:\\Users\\Administrator\\Desktop\\mser\\385.jpg";
 	string configFile="config.txt";
@@ -639,13 +702,20 @@ int main78(){
 	PrintConfig(config);
 	p=config["img"];
 	double thres=atof(config["thres"].c_str());
+	int delta=atoi(config["delta"].c_str());//! delta, in the code, it compares (size_{i}-size_{i-delta})/size_{i-delta}
+	int min_area=atoi(config["min_area"].c_str());//! prune the area which bigger than maxArea
+	int max_area=atoi(config["max_area"].c_str());//! prune the area which smaller than minArea
+	double max_variation=atof(config["max_variation"].c_str());//! prune the area have simliar size to its children
+	double min_diversity=atof(config["min_diversity"].c_str());//! trace back to cut off mser with diversity < min_diversity
+	//The next few params for MSER of color image:
+	int max_evolution=atoi(config["max_evolution"].c_str());//! for color image, the evolution steps
+	double area_threshold=atof(config["area_threshold"].c_str());//! the area threshold to cause re-initialize
+	double min_margin=atof(config["min_margin"].c_str());//! ignore too small margin
+	int edge_blur_size=atoi(config["edge_blur_size"].c_str());//! the aperture size for edge blur
 	Mat image = imread(p, 0);
 	draw = imread(p, 1);
 	clock_t start=clock();
-	ccMSER t(5, 60, 1440,0.25, 0.2,200, 1.01,0.003, 5);
-	//vector<vector<Point> > contours;
-	//vector<Vec4i> hierarchy;
-	//CvSeq *contours;
+	ccMSER t(delta,min_area,max_area,max_variation,min_diversity,max_evolution,area_threshold,min_margin,edge_blur_size);
 	vector<ccRegion> regions;
 	t(image,regions);
 	//breadth(&regions[0]);
@@ -668,14 +738,20 @@ int main78(){
 		}
 	}
 	cout<<"after LinearReduction and TreeAccumulation:"<<res.size()<<endl;
+	Mat beforeClustering=imread(p, 1);
+	for(int i=0;i<res.size();++i){
+		rectangle(beforeClustering,(*res[i]).rect,Scalar(0,255,0),-1);
+	}
 	vector<double> featureWeights(7,1);
 	string featureWeightsString=config["feature_weights"];
 	int send,sbegin=0;
 	for(int i=0;i<featureWeights.size();i++){
 		send=featureWeightsString.find(",",sbegin);
 		featureWeights[i]=atof(featureWeightsString.substr(sbegin,send).c_str());
+		//cout<<featureWeights[i]<<endl;
 		sbegin=send+1;
 	}
+
 	vector<vector<int>> clusterResult=HierarchicalClustering(image,res,featureWeights,thres);
 	cout<<"after HierarchicalClustering:"<<clusterResult.size()<<endl;
 	CvSVM SVM;
@@ -688,6 +764,7 @@ int main78(){
 		for(int k=1;k<clusterResult[j].size();++k){
 			tmp=tmp|res[clusterResult[j][k]]->rect;
 		}
+		//if(tmp.area()<1000)continue;
 		vector<float> t=GenerateHogFeature(image(tmp));
 		for(int i=0;i<t.size();++i){
 			predictData.at<float>(i)=t[i];
@@ -696,6 +773,7 @@ int main78(){
 		if(response>0)rectangle(draw,tmp,Scalar(0,255,0),2);
 		else rectangle(draw,tmp,Scalar(0,0,255),2);
 	}
+
 	//for(int i=0;i<clusterResult.size();i++){
 	//	cout<<i<<":\t";
 	//	for(int j=0;j<clusterResult[i].size();j++){
@@ -713,7 +791,8 @@ int main78(){
 	//CvContour* tmp=(CvContour*)*it;
 	//imshow("Color mser", draw);
 	cout<<"time costs: "<<double(clock()-start)/CLOCKS_PER_SEC<<"s\n";
-	imshow("with SVM", draw);
+	imshow("聚类前", beforeClustering);
+	imshow("聚类后", draw);
 	//imshow("without SVM", duibi);
 	waitKey(0);
 	return 0;
@@ -1020,14 +1099,38 @@ int cejisuanbixiankuandu(){
 	cout<<strokeWidth<<endl;
 	return 0;
 }
-
+double ComputeDistance(vector<double> &featureVector,vector<double> &featureWeights){
+	assert(featureVector.size()==featureWeights.size());
+	double ret=0;
+	for(size_t i=0;i<featureWeights.size();++i){
+		ret+=featureWeights[i]*featureVector[i];
+	}
+	return ret;
+}
 int xunlianjulicanshu(){
+	string configFile="config.txt";
+	map<string, string> config;
+	ReadConfig(configFile, config);
+	PrintConfig(config);
+	double thres=atof(config["thres"].c_str());
+	int delta=atoi(config["delta"].c_str());//! delta, in the code, it compares (size_{i}-size_{i-delta})/size_{i-delta}
+	int min_area=atoi(config["min_area"].c_str());//! prune the area which bigger than maxArea
+	int max_area=atoi(config["max_area"].c_str());//! prune the area which smaller than minArea
+	double max_variation=atof(config["max_variation"].c_str());//! prune the area have simliar size to its children
+	double min_diversity=atof(config["min_diversity"].c_str());//! trace back to cut off mser with diversity < min_diversity
+	//The next few params for MSER of color image:
+	int max_evolution=atoi(config["max_evolution"].c_str());//! for color image, the evolution steps
+	double area_threshold=atof(config["area_threshold"].c_str());//! the area threshold to cause re-initialize
+	double min_margin=atof(config["min_margin"].c_str());//! ignore too small margin
+	int edge_blur_size=atoi(config["edge_blur_size"].c_str());//! the aperture size for edge blur
 	ofstream f("e:\\julixunlian.txt");
+	FileStorage fs("e:\\jieguo.xml", FileStorage::WRITE);
 	vector<map<pair<int,int>,vector<vector<double> > > >feature;
-	for(int i=100;i<=105;++i){
+	int trainImageNum=228;
+	for(int i=100;i<100+trainImageNum;++i){
 		string p,gt;
 		string a=lexical_cast <string>(i);
-		cout<<i<<endl;
+		//cout<<i<<endl;
 		p="E:\\train-textloc\\"+a+".jpg";
 		gt="E:\\train-textloc\\gt_"+a+".txt"; 
 		//draw = imread(p, 1);
@@ -1039,7 +1142,7 @@ int xunlianjulicanshu(){
 		vector<vector<ccRegion> >regions;
 		vector<vector<ccRegion *> >resultRegionPtr;
 		regions.resize(groundTruthRect.size());
-		ccMSER t(5, 60, 1440,0.25, 0.2,200, 1.01,0.003, 5);
+		ccMSER t(delta,min_area,max_area,max_variation,min_diversity,max_evolution,area_threshold,min_margin,edge_blur_size);
 		map<pair<int,int>,vector<vector<double> > > imageFeature;
 		for(int j=0;j<groundTruthRect.size();++j){
 			t(grayImg(groundTruthRect[j]),regions[j]);
@@ -1063,11 +1166,6 @@ int xunlianjulicanshu(){
 					for(int p=0;p<resultRegionPtr[j].size();++p){
 						for(int q=p+1;q<resultRegionPtr[j].size();++q){
 							ComputeFeature(grayImg,*(resultRegionPtr[j][p]),*(resultRegionPtr[j][q]),featureVector);
-							f<<"1";
-							for(int r=0;r<featureVector.size();++r){
-								f<<"\t"<<featureVector[r];
-							}
-							f<<"\n";
 							mserFeature.push_back(featureVector);
 						}
 					}
@@ -1076,11 +1174,6 @@ int xunlianjulicanshu(){
 					for(int p=0;p<resultRegionPtr[j].size();++p){
 						for(int q=0;q<resultRegionPtr[k].size();++q){
 							ComputeFeature(grayImg,*(resultRegionPtr[j][p]),*(resultRegionPtr[k][q]),featureVector);
-							f<<"-1";
-							for(int r=0;r<featureVector.size();++r){
-								f<<"\t"<<featureVector[r];
-							}
-							f<<"\n";
 							mserFeature.push_back(featureVector);
 						}
 					}
@@ -1088,9 +1181,132 @@ int xunlianjulicanshu(){
 				imageFeature[make_pair(j,k)]=mserFeature;
 			}
 		}
-		cout<<"map:"<<imageFeature.size()<<endl;
-		cout<<"region:"<<resultRegionPtr.size()<<endl;
+		//cout<<"map:"<<imageFeature.size()<<endl;
+		//cout<<"cal:"<<int(sqrt(2*imageFeature.size()))<<endl;
+		//cout<<"region:"<<resultRegionPtr.size()<<endl;
 		feature.push_back(imageFeature);
+	}
+	vector<double> initialTheta(7,1);
+	for(int iter=0;iter<20;iter++){
+		vector<vector<double> > trainData;
+		vector<int> trainLabel;
+		for(int i=0;i<feature.size();++i){//num of images
+			int n=int(sqrt(2*feature[i].size()));// n regions
+			for(int j=0;j<n;++j){
+				vector<vector<double> > featureVector=feature[i][make_pair(j,j)];
+				if(featureVector.size()==0)continue;
+				double minDistance=100000;
+				int index=-1;
+				for(int l=0;l<featureVector.size();l++){
+					double tDistance=ComputeDistance(featureVector[l],initialTheta);
+					if(minDistance>tDistance){
+						minDistance=tDistance;
+						index=l;
+					}
+				}
+				//f<<"1";
+				//for(int k=0;k<featureVector[index].size();++k){
+				//	f<<"\t"<<featureVector[index][k];
+				//}
+				//f<<endl;
+				trainData.push_back(featureVector[index]);
+				trainLabel.push_back(1);
+			}
+			for(int j=0;j<n;++j){
+				for(int k=j+1;k<n;++k){
+					vector<vector<double> > featureVector=feature[i][make_pair(j,k)];
+					if(featureVector.size()==0)continue;
+					double minDistance=100000;
+					int index=-1;
+					for(int l=0;l<featureVector.size();l++){
+						double tDistance=ComputeDistance(featureVector[l],initialTheta);
+						if(minDistance>tDistance){
+							minDistance=tDistance;
+							index=l;
+						}
+					}
+					//f<<"2";
+					//for(int k=0;k<featureVector[index].size();++k){
+					//	f<<"\t"<<featureVector[index][k];
+					//}
+					//f<<endl;
+					trainData.push_back(featureVector[index]);
+					trainLabel.push_back(0);
+				}
+			}
+		}
+
+		LR LR;
+		for(int i=0;i<trainData.size();++i){
+			sparse_feat samp_feat;
+			samp_feat.id_vec.push_back(0); // bias
+			samp_feat.value_vec.push_back(1); // bias
+			for(int j=0;j<trainData[i].size();++j){
+				samp_feat.id_vec.push_back(j+1);
+				samp_feat.value_vec.push_back(trainData[i][j]);
+			}
+			LR.samp_class_vec.push_back(trainLabel[i]);
+			LR.samp_feat_vec.push_back(samp_feat);
+		}
+		LR.load_training_file("");
+		//cout<<LR.feat_set_size<<endl;
+		//cout<<LR.class_set_size<<endl;
+		LR.init_omega();
+		cout<<"yao xunlian le\n";
+		LR.train_online(200, 1e-6, 1, 0, 0);
+		//cout<<LR.omega.size()<<"\t"<<LR.omega[0].size()<<endl;
+		//for(int i=0;i<2;i++){
+		cout<<LR.omega[0][0]<<",";
+			for(int j=0;j<7;j++){
+				cout<<LR.omega[j+1][0]<<",";
+				initialTheta[j]=LR.omega[j+1][0];
+			}
+			//cout<<"fuzhijieshu le\n";
+			cout<<endl;
+			getchar();
+		//}
+		//Mat trainDataMat(trainData.size(),trainData[0].size(),CV_64F),trainLabelMat(trainData.size(),1,CV_32S);
+		//for(int i=0;i<trainData.size();++i){
+		//	for(int j=0;j<trainData[0].size();++j){
+		//		trainDataMat.at<double>(i,j)=trainData[i][j];
+		//	}
+		//	trainLabelMat.at<int>(i)=trainLabel[i];
+		//}
+		//cout<<"train data num:"<<trainDataMat.rows<<endl;
+		////cout<<trainLabelMat.type()<<endl;
+		//CvLR_TrainParams params = CvLR_TrainParams();
+		//params.alpha = 1.00;
+		//params.num_iters = 10000;
+		//params.normalization = CvLR::REG_L1;
+		//params.debug = true;
+		//params.regularized = true;
+		//params.train_method = CvLR::BATCH;
+
+		//CvLR lr_(trainDataMat, trainLabelMat, params);
+		//Mat Responses;
+		//
+		//lr_.predict(trainDataMat, Responses);
+		//fs<<"yuce"<<Responses;
+		//fs<<"groundtruth"<<trainLabelMat;
+		//Mat Result = (trainLabelMat == Responses)/255;
+
+		////cout<<"[Original Label]\t[Predicted Label]\t[Result]"<<endl;
+
+		//for(int i =0;i<trainLabelMat.rows;i++)
+		//{
+		//	//cout<<trainLabelMat.row(i)<<"\t"<<Responses.row(i)<<"\t"<<Result.row(i)<<endl;
+		//}
+
+		//cout<<"accuracy: "<<((double)cv::sum(Result)[0]/Result.rows)*100<<"%\n";
+
+		//Mat theta=lr_.learntThetas;
+		////cout<<"old theta"<<initialTheta<<endl;
+		//cout<<"new theta"<<theta<<endl;
+		//cout<<theta.rows<<"\t"<<theta.cols<<endl;
+		//for(int i=0;i<initialTheta.size();++i){
+		//	initialTheta[i]=theta.at<double>(i);
+		//}
+		//getchar();
 	}
 	cout<<"done\n";
 	return 0;
@@ -1099,6 +1315,8 @@ int xunlianjulicanshu(){
 
 int main(){
 	//svm();
-	xunlianjulicanshu();
+	//xunlianjulicanshu();
+	//lr();
+	wanzhengceshi();
 	return 0;
 }
